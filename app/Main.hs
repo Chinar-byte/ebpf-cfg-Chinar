@@ -36,11 +36,11 @@ cfg prog = Set.unions $ map transfer $ zip [0..] prog
     transfer (i, instr) =
       case instr of
         JCond cmp r ir off ->
-          Set.singleton (i, Test cmp r ir, i+fromIntegral off)
+          Set.singleton (i, Test cmp r ir, i+1+fromIntegral off)
           `Set.union`
           Set.singleton (i, Test (neg cmp) r ir, i+1)
         Jmp off ->
-          Set.singleton (i, unconditional, i+fromIntegral off)
+          Set.singleton (i, unconditional, i+1+fromIntegral off)
         Exit ->
           Set.empty
         Call _ ->
