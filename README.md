@@ -8,8 +8,6 @@ bit gnarly, because it isn't released to Hackage yet. Thus, you must
 have a `cabal.project` file with the following content:
 
 ```cabal
-packages: .
-
 -- Using the unreleased v. 0.1.0.0 of ebpf-tools from github
 source-repository-package
     type: git
@@ -21,6 +19,20 @@ source-repository-package
 As demonstrated in this project.
 
 
-How to run
-----------
+Visualise the CFG
+-----------------
+
+To make a `dot` file of the CFG for an eBPF assembler file, say
+`examples/add.asm`, run the command:
+
+```
+cabal run ebpf-cfg -- examples/add.asm add.dot
+```
+
+To make a PDF out of the `dot` file run the command (requires
+[graphviz](https://graphviz.org/)):
+
+```
+dot -Tpdf add.dot -o add.pdf
+```
 
