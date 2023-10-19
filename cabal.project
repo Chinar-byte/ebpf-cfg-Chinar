@@ -1,6 +1,7 @@
 packages: .
 
+-- Using the unreleased v. 0.1.0.0 of ebpf-tools from github
 source-repository-package
     type: git
     location: https://github.com/kfl/ebpf-tools.git
-    tag: 3ba405253bf7fbb7d3bfbdd096f73b158d2e7f0a
+    tag: d87166854082e68890b93a531a109838a8241958
