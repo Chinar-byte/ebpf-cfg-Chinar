@@ -1,11 +1,10 @@
-{-# LANGUAGE LambdaCase #-}
-
 module Main where
 
 import qualified System.Environment as Sys
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Text.Printf
+import Data.Maybe (mapMaybe)
 
 
 import Ebpf.Asm
@@ -71,10 +70,13 @@ dotPrelude =
   "node [shape=box];\n"++
   "edge [fontname=\"monospace\"];\n"
 
-exitNodes :: Program -> String
-exitNodes prog = exits >>= \(lab,_) -> printf "%d [style=\"rounded,filled\",fillcolor=grey];\n" lab
+markNodes :: Program -> String
+markNodes prog = concat $ mapMaybe mark $ label prog
   where
-    exits = filter (\case (_, Exit) -> True; _ -> False) $ label prog
+    mark (lab, Exit) = return $ printf "%d [style=\"rounded,filled\",fillcolor=grey];\n" lab
+    mark (lab, JCond _ _ _ _) = return $ printf "%d [shape=diamond];\n" lab
+    mark _ = Nothing
+
 
 
 main :: IO ()
@@ -92,7 +94,7 @@ main = do
           let edges = cfgToDot $ cfg prog
           writeFile dotFile (dotPrelude ++
                              edges ++
-                             exitNodes prog ++ "}")
+                             markNodes prog ++ "}")
           printf "Visualised the CFG in %s\n" dotFile
     _ ->
       putStrLn "Usage <EBPF_FILE>"
