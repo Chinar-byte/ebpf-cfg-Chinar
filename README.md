@@ -12,8 +12,7 @@ have a `cabal.project` file with the following content:
 source-repository-package
     type: git
     location: https://github.com/kfl/ebpf-tools.git
-    tag: d87166854082e68890b93a531a109838a8241958
-
+    tag: f864f1d1a0ff906bc521cbf269a838ec7c635286
 ```
 
 As demonstrated in this project.
