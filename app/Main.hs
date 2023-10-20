@@ -14,7 +14,7 @@ import Ebpf.AsmParser
 import Ebpf.Display
 
 data Trans =
-    NonCF Instruction -- no jumps, calls, or exit
+    NonCF Instruction -- no jumps, or exit
   | Test Jcmp Reg RegImm
   deriving (Show, Eq, Ord)
 
@@ -51,8 +51,6 @@ cfg prog = Set.unions $ map transfer $ label prog
         Jmp off ->
           Set.singleton (i, unconditional, i+1+fromIntegral off)
         Exit ->
-          Set.empty
-        Call _ ->
           Set.empty
         _ ->
           Set.singleton (i, NonCF instr, i+1)
