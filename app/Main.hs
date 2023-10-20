@@ -6,7 +6,6 @@ import qualified Data.Set as Set
 import Text.Printf
 import Data.Maybe (mapMaybe)
 
-
 import Ebpf.Asm
 import Ebpf.AsmParser
 
@@ -36,7 +35,6 @@ neg cmp =
     Jsgt -> Jsle; Jsge -> Jslt; Jslt -> Jsge; Jsle -> Jsgt
     Jset -> error "Don't know how to negate JSET"
 
-
 cfg :: Program -> CFG
 cfg prog = Set.unions $ map transfer $ label prog
   where
@@ -54,6 +52,9 @@ cfg prog = Set.unions $ map transfer $ label prog
           Set.empty
         _ ->
           Set.singleton (i, NonCF instr, i+1)
+
+
+------------------- The following is just for visualisation ------------------------
 
 cfgToDot :: CFG -> String
 cfgToDot graph = Set.toList graph >>= showTrans
@@ -76,8 +77,6 @@ markNodes prog = concat $ mapMaybe mark $ label prog
     mark (lab, Exit) = return $ printf "%d [style=\"rounded,filled\",fillcolor=grey];\n" lab
     mark (lab, JCond _ _ _ _) = return $ printf "%d [shape=diamond];\n" lab
     mark _ = Nothing
-
-
 
 main :: IO ()
 main = do
