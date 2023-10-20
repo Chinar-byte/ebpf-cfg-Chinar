@@ -17,7 +17,11 @@ data Trans =
   deriving (Show, Eq, Ord)
 
 type Label = Int
+type LabeledProgram = [(Int, Instruction)]
 type CFG = Set (Label, Trans, Label)
+
+label :: Program -> LabeledProgram
+label = zip [0..]
 
 r0 :: Reg
 r0 = Reg 0
@@ -33,8 +37,9 @@ neg cmp =
     Jsgt -> Jsle; Jsge -> Jslt; Jslt -> Jsge; Jsle -> Jsgt
     Jset -> error "Don't know how to negate JSET"
 
+
 cfg :: Program -> CFG
-cfg prog = Set.unions $ map transfer $ zip [0..] prog
+cfg prog = Set.unions $ map transfer $ label prog
   where
     transfer (i, instr) =
       case instr of
@@ -67,11 +72,9 @@ dotPrelude =
   "edge [fontname=\"monospace\"];\n"
 
 exitNodes :: Program -> String
-exitNodes prog =
-  exits >>= (\(lab,_) -> printf "%d [style=\"rounded,filled\",fillcolor=grey];\n" lab)
+exitNodes prog = exits >>= \(lab,_) -> printf "%d [style=\"rounded,filled\",fillcolor=grey];\n" lab
   where
-    exits :: [(Int, Instruction)]
-    exits = filter (\case (_, Exit) -> True; _ -> False) $ zip [0..] prog
+    exits = filter (\case (_, Exit) -> True; _ -> False) $ label prog
 
 
 main :: IO ()
