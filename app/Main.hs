@@ -5,7 +5,6 @@ module Main where
 import qualified System.Environment as Sys
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.List (intercalate)
 import Text.Printf
 
 
@@ -52,13 +51,13 @@ cfg prog = Set.unions $ map transfer $ zip [0..] prog
         _ ->
           Set.singleton (i, NonCF instr, i+1)
 
-cfgToDot :: CFG -> [String]
-cfgToDot graph = map showTrans $ Set.toList graph
+cfgToDot :: CFG -> String
+cfgToDot graph = Set.toList graph >>= showTrans
   where
-    showTrans (x, NonCF i, y) = concat [show x, " -> ", show y,
-                                        " [label=\"", show i, "\"];"]
-    showTrans (x, Test c r ir, y) = concat [show x, " -> ", show y,
-                                        " [label=\"", show c, " ", show r, " ", show ir, "\"];"]
+    showTrans (x, NonCF i, y) =
+      printf "  %d -> %d [label=\"%s\"];\n" x y (show i)
+    showTrans (x, Test c r ir, y) =
+      printf "  %d -> %d [label=\"%s %s %s\"];\n" x y (show c) (show r) (show ir)
 
 dotPrelude :: String
 dotPrelude =
@@ -86,11 +85,11 @@ main = do
           putStrLn "Some sort of error occurred while parsing:"
           print err
         Right prog -> do
-          putStrLn ("We got a program with "++(show $ length prog)++" instructions")
+          printf "The eBPF file %s has %d instructions\n" ebpfFile (length prog)
           let edges = cfgToDot $ cfg prog
           writeFile dotFile (dotPrelude ++
-                             intercalate "\n" edges ++
+                             edges ++
                              exitNodes prog ++ "}")
-
+          printf "Visualised the CFG in %s\n" dotFile
     _ ->
       putStrLn "Usage <EBPF_FILE>"
