@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Main where
 
 import qualified System.Environment as Sys
@@ -6,8 +7,11 @@ import qualified Data.Set as Set
 import Text.Printf
 import Data.Maybe (mapMaybe)
 
+import Data.Text.Display
+
 import Ebpf.Asm
 import Ebpf.AsmParser
+import Ebpf.Display
 
 data Trans =
     NonCF Instruction -- no jumps, calls, or exit
@@ -59,10 +63,9 @@ cfg prog = Set.unions $ map transfer $ label prog
 cfgToDot :: CFG -> String
 cfgToDot graph = Set.toList graph >>= showTrans
   where
-    showTrans (x, NonCF i, y) =
-      printf "  %d -> %d [label=\"%s\"];\n" x y (show i)
-    showTrans (x, Test c r ir, y) =
-      printf "  %d -> %d [label=\"%s %s %s\"];\n" x y (show c) (show r) (show ir)
+    showTrans (x, NonCF i, y) = printf "  %d -> %d [label=\"%s\"];\n" x y (display i)
+    showTrans (x, Test c r ir, y) = printf "  %d -> %d [label=\"%s\"];\n" x y (showJump c r ir)
+    showJump c r ir = display c <> " " <> display r <> ", " <> displayRegImm ir
 
 dotPrelude :: String
 dotPrelude =
