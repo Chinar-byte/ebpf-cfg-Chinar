@@ -1,9 +1,13 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Main where
 
 import qualified System.Environment as Sys
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.List (intercalate)
+import Text.Printf
+
 
 import Ebpf.Asm
 import Ebpf.AsmParser
@@ -63,6 +67,14 @@ dotPrelude =
   "node [shape=box];\n"++
   "edge [fontname=\"monospace\"];\n"
 
+exitNodes :: Program -> String
+exitNodes prog =
+  exits >>= (\(lab,_) -> printf "%d [style=\"rounded,filled\",fillcolor=grey];\n" lab)
+  where
+    exits :: [(Int, Instruction)]
+    exits = filter (\case (_, Exit) -> True; _ -> False) $ zip [0..] prog
+
+
 main :: IO ()
 main = do
   args <- Sys.getArgs
@@ -76,7 +88,9 @@ main = do
         Right prog -> do
           putStrLn ("We got a program with "++(show $ length prog)++" instructions")
           let edges = cfgToDot $ cfg prog
-          writeFile dotFile (dotPrelude ++ intercalate "\n" edges ++ "}")
+          writeFile dotFile (dotPrelude ++
+                             intercalate "\n" edges ++
+                             exitNodes prog ++ "}")
 
     _ ->
       putStrLn "Usage <EBPF_FILE>"
