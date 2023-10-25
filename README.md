@@ -6,9 +6,13 @@ Some starter code that shows how to use [`ebpf-tools`](https://github.com/kfl/eb
 Start by cloning or forking this repository, and then work on you own
 clone.
 
-All the code of interest is in [`app/Main.hs`](./app/Main.hs). The
-code roughly does two things: It builds a control-flow-graph (CFG) and it
-visualise the CFG using [graphviz](https://graphviz.org/).
+All the Haskell code of interest is in
+[`app/Main.hs`](./app/Main.hs). The code roughly does two things: it
+builds a control-flow-graph (CFG) and it visualise the CFG using
+[graphviz](https://graphviz.org/).
+
+You can find some sample eBPF programs in the [`examples`](./examples)
+directory.
 
 The set up in this project assumes that you are using `cabal` to build
 your project.
