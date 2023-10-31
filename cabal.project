@@ -4,4 +4,4 @@ packages: .
 source-repository-package
     type: git
     location: https://github.com/kfl/ebpf-tools.git
-    tag: c97f217edf9d75830faf16394e00f2d7eb6c7b82
+    tag: c173edcf320333537b1b1ca1cd621dda4c8705a3
