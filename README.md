@@ -54,7 +54,7 @@ dot -Tpdf add.dot -o add.pdf
 ```
 
 
-What if I'm using `stack?`
+What if I'm using `stack`?
 --------------------------
 
 If you are using `stack` then you'll want to add a `stack.yaml` file
