@@ -15,7 +15,8 @@ import Ebpf.Display
 
 data Trans =
     NonCF Instruction -- no jumps, or exit
-  | Test Jcmp Reg RegImm
+  | Unconditional
+  | Assert Jcmp Reg RegImm
   deriving (Show, Eq, Ord)
 
 type Label = Int
@@ -27,9 +28,6 @@ label = zip [0..]
 
 r0 :: Reg
 r0 = Reg 0
-
-unconditional :: Trans
-unconditional = Test Jeq r0 (Left r0)
 
 neg :: Jcmp -> Jcmp
 neg cmp =
@@ -45,11 +43,11 @@ cfg prog = Set.unions $ map transfer $ label prog
     transfer (i, instr) =
       case instr of
         JCond cmp r ir off ->
-          Set.singleton (i, Test cmp r ir, i+1+fromIntegral off)
+          Set.singleton (i, Assert cmp r ir, i+1+fromIntegral off)
           `Set.union`
-          Set.singleton (i, Test (neg cmp) r ir, i+1)
+          Set.singleton (i, Assert (neg cmp) r ir, i+1)
         Jmp off ->
-          Set.singleton (i, unconditional, i+1+fromIntegral off)
+          Set.singleton (i, Unconditional, i+1+fromIntegral off)
         Exit ->
           Set.empty
         _ ->
@@ -62,7 +60,8 @@ cfgToDot :: CFG -> String
 cfgToDot graph = Set.toList graph >>= showTrans
   where
     showTrans (x, NonCF i, y) = printf "  %d -> %d [label=\"%s\"];\n" x y (display i)
-    showTrans (x, Test c r ir, y) = printf "  %d -> %d [label=\"%s\"];\n" x y (showJump c r ir)
+    showTrans (x, Unconditional, y) = printf "  %d -> %d [label=\"jmp\"];\n" x y
+    showTrans (x, Assert c r ir, y) = printf "  %d -> %d [label=\"%s\"];\n" x y (showJump c r ir)
     showJump c r ir = display c <> " " <> display r <> ", " <> displayRegImm ir
 
 dotPrelude :: String
