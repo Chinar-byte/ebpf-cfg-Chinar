@@ -30,7 +30,7 @@ have a `cabal.project` file with the following content:
 source-repository-package
     type: git
     location: https://github.com/kfl/ebpf-tools.git
-    tag: c173edcf320333537b1b1ca1cd621dda4c8705a3
+    tag: 05896a14b23c8940703865ac5f8d7486cbf96d9e
 ```
 
 As demonstrated in this project.
@@ -64,7 +64,7 @@ for `ebpf-tools`:
 ```yaml
 extra-deps:
   - github: kfl/ebpf-tools
-    commit: c173edcf320333537b1b1ca1cd621dda4c8705a3
+    commit: 05896a14b23c8940703865ac5f8d7486cbf96d9e
 ```
 
 (You might also need to delete the `cabal.project` file. I don't know,
