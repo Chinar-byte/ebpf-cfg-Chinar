@@ -11,7 +11,7 @@ import Data.Text.Display
 
 import Ebpf.Asm
 import Ebpf.AsmParser
-import Ebpf.Display
+import Ebpf.Display ()
 
 data Trans =
     NonCF Instruction -- no jumps, or exit
@@ -62,7 +62,7 @@ cfgToDot graph = Set.toList graph >>= showTrans
     showTrans (x, NonCF i, y) = printf "  %d -> %d [label=\"%s\"];\n" x y (display i)
     showTrans (x, Unconditional, y) = printf "  %d -> %d [label=\"jmp\"];\n" x y
     showTrans (x, Assert c r ir, y) = printf "  %d -> %d [label=\"%s\"];\n" x y (showJump c r ir)
-    showJump c r ir = display c <> " " <> display r <> ", " <> displayRegImm ir
+    showJump c r ir = display c <> " " <> display r <> ", " <> display ir
 
 dotPrelude :: String
 dotPrelude =

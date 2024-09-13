@@ -26,11 +26,11 @@ bit gnarly, because it isn't released to Hackage yet. Thus, you must
 have a `cabal.project` file with the following content:
 
 ```cabal
--- Using the unreleased v. 0.1.0.0 of ebpf-tools from github
+-- Using the unreleased v. 0.2.0.0 of ebpf-tools from github
 source-repository-package
     type: git
     location: https://github.com/kfl/ebpf-tools.git
-    tag: f13c93175e3a1ececfab1b47cbd789f58fce7564
+    tag: 3024cfaddd9160bb746a2b20d982c511791c8644
 ```
 
 As demonstrated in this project.
@@ -64,7 +64,7 @@ for `ebpf-tools`:
 ```yaml
 extra-deps:
   - github: kfl/ebpf-tools
-    commit: f13c93175e3a1ececfab1b47cbd789f58fce7564
+    commit: 3024cfaddd9160bb746a2b20d982c511791c8644
 ```
 
 (You might also need to delete the `cabal.project` file. I don't know,
