@@ -29,6 +29,38 @@ label = zip [0..]
 r0 :: Reg
 r0 = Reg 0
 
+r1 :: Reg
+r1 = Reg 1
+
+r2 :: Reg
+r2 = Reg 2
+
+r3 :: Reg
+r3 = Reg 3
+
+r4 :: Reg
+r4 = Reg 4
+
+r5 :: Reg
+r5 = Reg 5
+
+r6 :: Reg
+r6 = Reg 6
+
+r7 :: Reg
+r7 = Reg 7
+
+r8 :: Reg
+r8 = Reg 8
+
+r9 :: Reg
+r9 = Reg 9
+
+r10 :: Reg
+r10 = Reg 10
+
+-- type Memory = Array Int Instruction 
+
 neg :: Jcmp -> Jcmp
 neg cmp =
   case cmp of
