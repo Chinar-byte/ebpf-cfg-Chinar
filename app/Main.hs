@@ -84,6 +84,7 @@ markNodes prog = concat $ mapMaybe mark $ label prog
 data Interval = Bottom                       -- undefined
               | Top                          -- any possible value
               | Interval Double Double       -- [l, u]
+              | Intervalreg RegImm RegImm
               | Intervals Interval Interval  -- composition of intervals
               deriving (Eq, Show)
 
@@ -126,15 +127,27 @@ transferBinOp binOp reg ri rj (mem, regs) =
     in (mem, newRegs)
 
 -- Transfer function for Assert (conditional jump)
-transferAssert :: Jcmp -> Reg -> RegImm -> Environment -> (Environment, Environment)
+transferAssert :: Jcmp -> Reg -> RegImm -> Environment -> Boolean
 transferAssert cmp reg (R rj) (mem, regs) =
     let intervalRi = Map.findWithDefault Bottom reg regs
         intervalRj = Map.findWithDefault Bottom rj regs
-        -- True and false branches for condition (simplified, depends on comparison)
-        trueBranch = (mem, Map.insert reg (intervalIntersection intervalRi intervalRj) regs)
-        falseBranch = (mem, Map.insert reg (intervalMinus intervalRi intervalRj) regs)
+        
+        -- Check the condition and determine the branches
+        conditionTrue = evaluateCondition cmp intervalRi intervalRj
+        newRegsTrue = if conditionTrue
+            then Map.insert reg (intervalIntersection intervalRi intervalRj) regs
+            else Map.insert reg (Bottom) regs  -- Handle false case appropriately
+
+        newRegsFalse = if not conditionTrue
+            then Map.insert reg (intervalMinus intervalRi intervalRj) regs
+            else Map.insert reg (Bottom) regs  -- Handle true case appropriately
+            
+        trueBranch = (mem, newRegsTrue)
+        falseBranch = (mem, newRegsFalse)
     in (trueBranch, falseBranch)
+
 transferAssert _ _ _ env = (env, env) -- Other cases simplified
+
 
 -- Interval operations (addition, subtraction, etc.)
 intervalAdd :: Interval -> Interval -> Interval
@@ -166,17 +179,23 @@ evalTrans (Assert cmp reg regimm) env =
     let (trueEnv, falseEnv) = transferAssert cmp reg regimm env
     in trueEnv -- You can extend this to handle branching explicitly
 
--- Lookup function for register values
-lookupRegister :: Reg -> Environment -> Interval
-lookupRegister reg (_, regs) = Map.findWithDefault Bottom reg regs
+-- Helper function to evaluate conditions
+evaluateCondition :: Jcmp -> Interval -> Interval -> Bool
+evaluateCondition Jeq (Interval l1 u1) (Interval l2 u2) = l1 == l2 && u1 == u2
+evaluateCondition Jne (Interval l1 u1) (Interval l2 u2) = not (l1 == l2 && u1 == u2)
+evaluateCondition Jgt (Interval l1 u1) (Interval l2 u2) = u1 > l2
+evaluateCondition Jge (Interval l1 u1) (Interval l2 u2) = l1 >= l2
+evaluateCondition Jlt (Interval l1 u1) (Interval l2 u2) = l1 < u2
+evaluateCondition Jle (Interval l1 u1) (Interval l2 u2) = u1 <= l2
+evaluateCondition _ _ _ = False  -- Handle other cases or invalid inputs
+
 
 -- Evaluates a single instruction
 evalInstr :: Instruction -> Environment -> Environment
 evalInstr (Binary _ Add ri (R rj)) env = transferBinOp Add ri ri rj env
 evalInstr (Binary _ Sub ri (R rj)) env = transferBinOp Sub ri ri rj env
-evalInstr (Binary _ Mov ri (R rj)) env = transferMov ri (lookupRegister rj env) env  -- Mov instruction
+evalInstr (Binary _ Mov ri num) env = transferMov ri (Intervalreg num num) env
 evalInstr (LoadImm ri imm) env = transferMov ri (Interval (fromIntegral imm) (fromIntegral imm)) env
-evalInstr (JCond cmp ri rj off) env = let (trueEnv, _) = transferAssert cmp ri rj env in trueEnv  -- Simplified branching
 evalInstr Exit env = env -- Exit instruction terminates execution
 evalInstr _ env = env -- Other cases
 
