@@ -1,5 +1,8 @@
 {-# OPTIONS_GHC -Wno-overlapping-patterns #-}
-module Interval where
+module Interval (
+    Interval
+) 
+where
 
 import Data.Set (Set)
 import qualified Data.Set as Set
