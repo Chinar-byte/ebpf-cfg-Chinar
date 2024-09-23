@@ -108,46 +108,80 @@ updateMemory mem i interval = Map.insert i interval mem
 initRegisters :: Map.Map Reg Interval
 initRegisters = Map.fromList [(Reg r, Interval 0 0) | r <- [0..10]]
 
--- Transfer function for MOV (LoadImm)
+-- Function to lookup the value in a given register
+lookupRegister :: Reg -> Environment -> Interval
+lookupRegister reg (_, regs) = Map.findWithDefault Bottom reg regs
+
+-- Transfer function for Unary operations
+transferUnaryOp :: UnAlu -> Reg -> Environment -> Environment
+transferUnaryOp Neg reg (mem, regs) =
+    let interval = Map.findWithDefault Bottom reg regs
+        newInterval = case interval of
+            Interval l u -> Interval (-u) (-l)  -- Negate the interval bounds
+            _ -> Top
+        newRegs = Map.insert reg newInterval regs
+    in (mem, newRegs)
+transferUnaryOp _ reg env = env  -- Simplified for other unary operations
+
+transferStore :: BSize -> Reg -> Maybe MemoryOffset -> RegImm -> Environment -> Environment
+transferStore bsize dst maybeOffset srcRegImm (mem, regs) =
+    let value = case srcRegImm of
+                    R r -> Map.findWithDefault Bottom r regs
+                    Imm imm -> Interval (fromIntegral imm) (fromIntegral imm)  -- Carica l'imm immediato
+
+        updatedMem = case maybeOffset of
+                        Just offset -> updateMemory mem (fromIntegral offset) value  -- Aggiorna la memoria
+                        Nothing -> mem  -- Se non c'è offset, non facciamo nulla
+    in (updatedMem, regs)
+
+transferLoadImm :: Reg -> Imm -> Environment -> Environment
+transferLoadImm reg imm (mem, regs) =
+    let newRegs = Map.insert reg (Interval (fromIntegral imm) (fromIntegral imm)) regs
+    in (mem, newRegs)
+
+transferLoadMapFd :: Reg -> Imm -> Environment -> Environment
+transferLoadMapFd reg fd (mem, regs) =
+    let newRegs = Map.insert reg (Interval (fromIntegral fd) (fromIntegral fd)) regs
+    in (mem, newRegs)
+
+transferBinOp :: BinAlu -> Reg -> Reg -> Reg -> Environment -> Environment
+transferBinOp op dst src1 src2 (mem, regs) =
+  let interval1 = Map.findWithDefault Bottom src1 regs
+      interval2 = Map.findWithDefault Bottom src2 regs
+      newInterval = case op of
+          Add -> intervalAdd interval1 interval2
+          Sub -> intervalSub interval1 interval2
+          -- Per altre operazioni binarie (Or, And, ecc.)
+          _   -> Top
+      newRegs = Map.insert dst newInterval regs
+  in (mem, newRegs)
+
+-- -- Transfer function for Assert (conditional jump)
+-- transferAssert :: Jcmp -> Reg -> RegImm -> Environment -> Bool
+-- transferAssert cmp reg (R rj) (mem, regs) =
+--     let intervalRi = Map.findWithDefault Bottom reg regs
+--         intervalRj = Map.findWithDefault Bottom rj regs
+        
+--         -- Check the condition and determine the branches
+--         conditionTrue = evaluateCondition cmp intervalRi intervalRj
+--         newRegsTrue = if conditionTrue
+--             then Map.insert reg (intervalIntersection intervalRi intervalRj) regs
+--             else Map.insert reg (Bottom) regs  -- Handle false case appropriately
+
+--         newRegsFalse = if not conditionTrue
+--             then Map.insert reg (intervalMinus intervalRi intervalRj) regs
+--             else Map.insert reg (Bottom) regs  -- Handle true case appropriately
+            
+--         trueBranch = (mem, newRegsTrue)
+--         falseBranch = (mem, newRegsFalse)
+--     in (trueBranch, falseBranch)
+
+-- transferAssert _ _ _ env = (env, env) -- Other cases simplified
+
 transferMov :: Reg -> Interval -> Environment -> Environment
 transferMov reg interval (mem, regs) =
     let newRegs = Map.insert reg interval regs
     in (mem, newRegs)
-
--- Transfer function for binary operations like ADD
-transferBinOp :: BinAlu -> Reg -> Reg -> Reg -> Environment -> Environment
-transferBinOp binOp reg ri rj (mem, regs) =
-    let intervalRi = Map.findWithDefault Bottom ri regs
-        intervalRj = Map.findWithDefault Bottom rj regs
-        newInterval = case binOp of
-                        Add -> intervalAdd intervalRi intervalRj
-                        Sub -> intervalSub intervalRi intervalRj
-                        _   -> Top -- Other binary operators can be defined
-        newRegs = Map.insert reg newInterval regs
-    in (mem, newRegs)
-
--- Transfer function for Assert (conditional jump)
-transferAssert :: Jcmp -> Reg -> RegImm -> Environment -> Boolean
-transferAssert cmp reg (R rj) (mem, regs) =
-    let intervalRi = Map.findWithDefault Bottom reg regs
-        intervalRj = Map.findWithDefault Bottom rj regs
-        
-        -- Check the condition and determine the branches
-        conditionTrue = evaluateCondition cmp intervalRi intervalRj
-        newRegsTrue = if conditionTrue
-            then Map.insert reg (intervalIntersection intervalRi intervalRj) regs
-            else Map.insert reg (Bottom) regs  -- Handle false case appropriately
-
-        newRegsFalse = if not conditionTrue
-            then Map.insert reg (intervalMinus intervalRi intervalRj) regs
-            else Map.insert reg (Bottom) regs  -- Handle true case appropriately
-            
-        trueBranch = (mem, newRegsTrue)
-        falseBranch = (mem, newRegsFalse)
-    in (trueBranch, falseBranch)
-
-transferAssert _ _ _ env = (env, env) -- Other cases simplified
-
 
 -- Interval operations (addition, subtraction, etc.)
 intervalAdd :: Interval -> Interval -> Interval
@@ -155,7 +189,7 @@ intervalAdd (Interval l1 u1) (Interval l2 u2) = Interval (l1 + l2) (u1 + u2)
 intervalAdd _ _ = Top
 
 intervalSub :: Interval -> Interval -> Interval
-intervalSub (Interval l1 u1) (Interval l2 u2) = Interval (l1 - u2) (u1 - l2)
+intervalSub (Interval l1 u1) (Interval l2 u2) = Interval (l1 - l2) (u1 - u2) -- finite intervals
 intervalSub _ _ = Bottom
 
 intervalIntersection :: Interval -> Interval -> Interval
@@ -175,9 +209,9 @@ evalCFG cfg env =
 evalTrans :: Trans -> Environment -> Environment
 evalTrans (NonCF instr) env = evalInstr instr env
 evalTrans Unconditional env = env -- Unconditional jump (handled separately in control flow)
-evalTrans (Assert cmp reg regimm) env = 
-    let (trueEnv, falseEnv) = transferAssert cmp reg regimm env
-    in trueEnv -- You can extend this to handle branching explicitly
+evalTrans (Assert cmp reg regimm) env = undefined
+    -- let (trueEnv, falseEnv) = transferAssert cmp reg regimm env
+    -- in trueEnv -- You can extend this to handle branching explicitly
 
 -- Helper function to evaluate conditions
 evaluateCondition :: Jcmp -> Interval -> Interval -> Bool
@@ -189,23 +223,49 @@ evaluateCondition Jlt (Interval l1 u1) (Interval l2 u2) = l1 < u2
 evaluateCondition Jle (Interval l1 u1) (Interval l2 u2) = u1 <= l2
 evaluateCondition _ _ _ = False  -- Handle other cases or invalid inputs
 
+-- Function to find the next element based on the last value of the first element
+-- findNextByLastValue :: CFG -> Maybe (Label, Trans, Label)
+-- findNextByLastValue cfg =
+--     case Set.toList cfg of
+--         [] -> Nothing
+--         (firstElem:_) -> let lastValue = getLastValue firstElem
+--                              in findNextElement lastValue (Set.toList cfg)
+
+-- -- Helper function to get the last value from a tuple
+-- getLastValue :: (Label, Trans, Label) -> Label
+-- getLastValue (_, _, last) = last
+
+-- -- Function to find the next element with the matching first value
+-- findNextElement :: Label -> [(Label, Trans, Label)] -> Maybe (Label, Trans, Label)
+-- findNextElement _ [] = Nothing
+-- findNextElement lastValue (x:xs) =
+--     if getFirstValue x == lastValue
+--         then Just x
+--         else findNextElement lastValue xs
+
+-- -- Helper function to get the first value from a tuple
+-- getFirstValue :: (Label, Trans, Label) -> Label
+-- getFirstValue (first, _, _) = first
+
 
 -- Evaluates a single instruction
 evalInstr :: Instruction -> Environment -> Environment
 evalInstr (Binary _ Add ri (R rj)) env = transferBinOp Add ri ri rj env
 evalInstr (Binary _ Sub ri (R rj)) env = transferBinOp Sub ri ri rj env
-evalInstr (Binary _ Mov ri num) env = transferMov ri (Intervalreg num num) env
-evalInstr (LoadImm ri imm) env = transferMov ri (Interval (fromIntegral imm) (fromIntegral imm)) env
+evalInstr (Binary _ Mov ri (Imm r)) env = transferMov ri (Interval (fromIntegral r) (fromIntegral r)) env
+evalInstr (Unary _ Neg reg) env = transferUnaryOp Neg reg env
+evalInstr (Store bsize dst maybeOffset src) env = transferStore bsize dst maybeOffset src env
+evalInstr (LoadImm reg imm) env = transferLoadImm reg imm env 
+evalInstr (LoadMapFd reg fd) env = transferLoadMapFd reg fd env  
 evalInstr Exit env = env -- Exit instruction terminates execution
-evalInstr _ env = env -- Other cases
 
 -- Example CFG with transitions
 exampleCFG :: Set.Set (Int, Trans, Int)
 exampleCFG = Set.fromList [
     (0, NonCF (Binary B32 Mov (Reg 0) (Imm 21)), 1),
     (1, NonCF (Binary B64 Mov (Reg 1) (Imm 21)), 2),
-    (2, Assert Jeq (Reg 0) (Imm 0), 4),
-    (2, Assert Jne (Reg 0) (Imm 0), 3),
+    -- (2, Assert Jeq (Reg 0) (Imm 0), 4),
+    -- (2, Assert Jne (Reg 0) (Imm 0), 3),
     (3, NonCF (Binary B64 Add (Reg 0) (R (Reg 1))), 4)
     ]
 
