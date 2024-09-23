@@ -7,7 +7,6 @@ import qualified Data.Set as Set
 import Text.Printf
 import Data.Maybe (mapMaybe)
 import qualified Data.Map as Map
--- import Interval (Interval (..))
 
 import Data.Text.Display
 
@@ -15,54 +14,22 @@ import Ebpf.Asm
 import Ebpf.AsmParser
 import Ebpf.Display ()
 
+-- Transitions representing different types of instructions
 data Trans =
-    NonCF Instruction -- no jumps, or exit
-  | Unconditional
-  | Assert Jcmp Reg RegImm
+    NonCF Instruction  -- No jumps, or exit
+  | Unconditional      -- Unconditional jumps
+  | Assert Jcmp Reg RegImm -- Conditional jumps
   deriving (Show, Eq, Ord)
 
 type Label = Int
 type LabeledProgram = [(Int, Instruction)]
 type CFG = Set (Label, Trans, Label)
 
+-- Assigns a label to each instruction in the program
 label :: Program -> LabeledProgram
 label = zip [0..]
 
--- r0 :: Reg
--- r0 = Reg 0
-
--- r1 :: Reg
--- r1 = Reg 1
-
--- r2 :: Reg
--- r2 = Reg 2
-
--- r3 :: Reg
--- r3 = Reg 3
-
--- r4 :: Reg
--- r4 = Reg 4
-
--- r5 :: Reg
--- r5 = Reg 5
-
--- r6 :: Reg
--- r6 = Reg 6
-
--- r7 :: Reg
--- r7 = Reg 7
-
--- r8 :: Reg
--- r8 = Reg 8
-
--- r9 :: Reg
--- r9 = Reg 9
-
--- r10 :: Reg
--- r10 = Reg 10
-
--- type Memory = Array Int Instruction 
-
+-- Negates the condition for conditional jumps
 neg :: Jcmp -> Jcmp
 neg cmp =
   case cmp of
@@ -71,6 +38,7 @@ neg cmp =
     Jsgt -> Jsle; Jsge -> Jslt; Jslt -> Jsge; Jsle -> Jsgt
     Jset -> error "Don't know how to negate JSET"
 
+-- Constructs the control flow graph (CFG) for a given program
 cfg :: Program -> CFG
 cfg prog = Set.unions $ map transfer $ label prog
   where
@@ -87,9 +55,7 @@ cfg prog = Set.unions $ map transfer $ label prog
         _ ->
           Set.singleton (i, NonCF instr, i+1)
 
-
-------------------- The following is just for visualisation ------------------------
-
+-- Converts the CFG into DOT format for visualization
 cfgToDot :: CFG -> String
 cfgToDot graph = Set.toList graph >>= showTrans
   where
@@ -98,6 +64,7 @@ cfgToDot graph = Set.toList graph >>= showTrans
     showTrans (x, Assert c r ir, y) = printf "  %d -> %d [label=\"%s\"];\n" x y (showJump c r ir)
     showJump c r ir = display c <> " " <> display r <> ", " <> display ir
 
+-- DOT prelude for CFG visualization
 dotPrelude :: String
 dotPrelude =
   "digraph cfg { \n"++
@@ -105,6 +72,7 @@ dotPrelude =
   "node [shape=box];\n"++
   "edge [fontname=\"monospace\"];\n"
 
+-- Mark specific nodes in the CFG for visualization
 markNodes :: Program -> String
 markNodes prog = concat $ mapMaybe mark $ label prog
   where
@@ -112,100 +80,70 @@ markNodes prog = concat $ mapMaybe mark $ label prog
     mark (lab, JCond _ _ _ _) = return $ printf "%d [shape=diamond];\n" lab
     mark _ = Nothing
 
--- main :: IO ()
--- main = do
---   args <- Sys.getArgs
---   case args of
---     [ebpfFile, dotFile] -> do
---       res <- parseFromFile ebpfFile
---       case res of
---         Left err -> do
---           putStrLn "Some sort of error occurred while parsing:"
---           print err
---         Right prog -> do
---           printf "The eBPF file %s has %d instructions\n" ebpfFile (length prog)
---           let edges = cfgToDot $ cfg prog
---           writeFile dotFile (dotPrelude ++
---                              edges ++
---                              markNodes prog ++ "}")
---           printf "Visualised the CFG in %s\n" dotFile
---     _ ->
---       putStrLn "Usage <EBPF_FILE>"
+-- Definition of the Interval type for abstract interpretation
+data Interval = Bottom                       -- undefined
+              | Top                          -- any possible value
+              | Interval Double Double       -- [l, u]
+              | Intervals Interval Interval  -- composition of intervals
+              deriving (Eq, Show)
 
-
-
--- Definizione di Reg, RegOrImm e Jcmp
-type Reg = String
-data RegOrImm = Imm Double | R Reg deriving (Eq, Show)
-data Jcmp = Eq | Neq | Lt | Leq | Gt | Geq deriving (Eq, Show)
-
--- Definizione dell'ambiente e della memoria
+-- Memory and Environment definition
 type Memory = Map.Map Int Interval
 type Environment = (Memory, Map.Map Reg Interval)
 
-data Interval = Bottom                       -- undefined
-    -- | Interval Integer Integer               -- [l, u]
-    | Top                                    -- T (any possible value)
-    | Interval Double Double           -- negative infinity to the positive infinity 
-    | Intervals Interval Interval
-    deriving (Eq, Show)
-
--- Funzione di inizializzazione della memoria
+-- Initializes memory
 initMemory :: Memory
 initMemory = Map.fromList [(i, Bottom) | i <- [0..511]]
 
--- Funzione di lookup per la memoria
+-- Memory lookup function
 lookupMemory :: Memory -> Int -> Interval
 lookupMemory mem i = Map.findWithDefault Bottom i mem
 
--- Funzione di aggiornamento della memoria
+-- Memory update function
 updateMemory :: Memory -> Int -> Interval -> Memory
 updateMemory mem i interval = Map.insert i interval mem
 
--- Funzione di inizializzazione dei registri
+-- Initializes registers
 initRegisters :: Map.Map Reg Interval
-initRegisters = Map.fromList [(r, Bottom) | r <- ["r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10"]]
+initRegisters = Map.fromList [(Reg r, Interval 0 0) | r <- [0..10]]
 
--- Funzione di trasferimento per il MOV
+-- Transfer function for MOV (LoadImm)
 transferMov :: Reg -> Interval -> Environment -> Environment
 transferMov reg interval (mem, regs) =
     let newRegs = Map.insert reg interval regs
     in (mem, newRegs)
 
--- Funzione di trasferimento per ADD
-transferAdd :: Reg -> Reg -> Reg -> Environment -> Environment
-transferAdd reg ri rj (mem, regs) =
+-- Transfer function for binary operations like ADD
+transferBinOp :: BinAlu -> Reg -> Reg -> Reg -> Environment -> Environment
+transferBinOp binOp reg ri rj (mem, regs) =
     let intervalRi = Map.findWithDefault Bottom ri regs
         intervalRj = Map.findWithDefault Bottom rj regs
-        newInterval = intervalAdd intervalRi intervalRj
+        newInterval = case binOp of
+                        Add -> intervalAdd intervalRi intervalRj
+                        Sub -> intervalSub intervalRi intervalRj
+                        _   -> Top -- Other binary operators can be defined
         newRegs = Map.insert reg newInterval regs
     in (mem, newRegs)
 
--- Funzione di aggiornamento memoria con assegnazione
-transferMemAssign :: Reg -> Reg -> Environment -> Environment
-transferMemAssign addrReg srcReg (mem, regs) =
-    let intervalAddr = Map.findWithDefault Bottom addrReg regs
-        intervalSrc = Map.findWithDefault Bottom srcReg regs
-        newMem = case intervalAddr of
-                   Interval l u | l == u -> updateMemory mem (round l) intervalSrc
-                   _ -> mem -- if it's not a single value address, leave memory unchanged
-    in (newMem, regs)
-
--- Funzione di trasferimento per Assert (salto condizionale)
-transferAssert :: Jcmp -> Reg -> RegOrImm -> Environment -> (Environment, Environment)
+-- Transfer function for Assert (conditional jump)
+transferAssert :: Jcmp -> Reg -> RegImm -> Environment -> (Environment, Environment)
 transferAssert cmp reg (R rj) (mem, regs) =
     let intervalRi = Map.findWithDefault Bottom reg regs
         intervalRj = Map.findWithDefault Bottom rj regs
-        -- Branches for true and false conditions (semplificazione, dipende dal confronto)
+        -- True and false branches for condition (simplified, depends on comparison)
         trueBranch = (mem, Map.insert reg (intervalIntersection intervalRi intervalRj) regs)
         falseBranch = (mem, Map.insert reg (intervalMinus intervalRi intervalRj) regs)
     in (trueBranch, falseBranch)
-transferAssert _ _ _ env = (env, env) -- Altri casi per semplificare
+transferAssert _ _ _ env = (env, env) -- Other cases simplified
 
--- Esempio di operazioni sugli intervalli (aggiunta, intersezione, ecc.)
+-- Interval operations (addition, subtraction, etc.)
 intervalAdd :: Interval -> Interval -> Interval
 intervalAdd (Interval l1 u1) (Interval l2 u2) = Interval (l1 + l2) (u1 + u2)
 intervalAdd _ _ = Top
+
+intervalSub :: Interval -> Interval -> Interval
+intervalSub (Interval l1 u1) (Interval l2 u2) = Interval (l1 - u2) (u1 - l2)
+intervalSub _ _ = Bottom
 
 intervalIntersection :: Interval -> Interval -> Interval
 intervalIntersection (Interval l1 u1) (Interval l2 u2) = Interval (max l1 l2) (min u1 u2)
@@ -215,39 +153,44 @@ intervalMinus :: Interval -> Interval -> Interval
 intervalMinus (Interval l1 u1) (Interval l2 u2) = Interval (l1 - u2) (u1 - l2)
 intervalMinus _ _ = Bottom
 
--- Esecuzione del CFG
-evalCFG :: CFG -> Environment -> Environment
+-- Evaluates the CFG based on transitions
+evalCFG :: Set.Set (Int, Trans, Int) -> Environment -> Environment
 evalCFG cfg env = 
     foldl (\env (fromNode, trans, toNode) -> evalTrans trans env) env (Set.toList cfg)
 
--- Valutazione delle transizioni
+-- Evaluates a transition (NonCF, Unconditional, or Assert)
 evalTrans :: Trans -> Environment -> Environment
 evalTrans (NonCF instr) env = evalInstr instr env
-evalTrans Unconditional env = env -- Salto incondizionato, semplice transizione
-evalTrans (Assert cmp reg regImm) env =
-    let (trueEnv, falseEnv) = transferAssert cmp reg regImm env
-    in trueEnv -- Per ora seguiamo solo il ramo true
+evalTrans Unconditional env = env -- Unconditional jump (handled separately in control flow)
+evalTrans (Assert cmp reg regimm) env = 
+    let (trueEnv, falseEnv) = transferAssert cmp reg regimm env
+    in trueEnv -- You can extend this to handle branching explicitly
 
--- Esecuzione di una singola istruzione
+-- Lookup function for register values
+lookupRegister :: Reg -> Environment -> Interval
+lookupRegister reg (_, regs) = Map.findWithDefault Bottom reg regs
+
+-- Evaluates a single instruction
 evalInstr :: Instruction -> Environment -> Environment
-evalInstr (Mov ri (Imm n)) env = transferMov ri (Interval n n) env
-evalInstr (Mov ri (R rj)) env = 
-    let (_, regs) = env
-        intervalRj = Map.findWithDefault Bottom rj regs
-    in transferMov ri intervalRj env
-evalInstr (Add ri rj rk) env = transferAdd ri rj rk env
-evalInstr (MemAssign ri rj) env = transferMemAssign ri rj env
-evalInstr _ env = env -- altri casi da aggiungere per istruzioni restanti
+evalInstr (Binary _ Add ri (R rj)) env = transferBinOp Add ri ri rj env
+evalInstr (Binary _ Sub ri (R rj)) env = transferBinOp Sub ri ri rj env
+evalInstr (Binary _ Mov ri (R rj)) env = transferMov ri (lookupRegister rj env) env  -- Mov instruction
+evalInstr (LoadImm ri imm) env = transferMov ri (Interval (fromIntegral imm) (fromIntegral imm)) env
+evalInstr (JCond cmp ri rj off) env = let (trueEnv, _) = transferAssert cmp ri rj env in trueEnv  -- Simplified branching
+evalInstr Exit env = env -- Exit instruction terminates execution
+evalInstr _ env = env -- Other cases
 
--- Esempio di test del CFG con istruzioni
-exampleCFG :: CFG
+-- Example CFG with transitions
+exampleCFG :: Set.Set (Int, Trans, Int)
 exampleCFG = Set.fromList [
-    (0, NonCF (Mov "r1" (Imm 5)), 1),
-    (1, NonCF (Add "r2" "r1" "r1"), 2),
-    (2, Assert Eq "r2" (R "r1"), 3)
+    (0, NonCF (Binary B32 Mov (Reg 0) (Imm 21)), 1),
+    (1, NonCF (Binary B64 Mov (Reg 1) (Imm 21)), 2),
+    (2, Assert Jeq (Reg 0) (Imm 0), 4),
+    (2, Assert Jne (Reg 0) (Imm 0), 3),
+    (3, NonCF (Binary B64 Add (Reg 0) (R (Reg 1))), 4)
     ]
 
--- Esempio di esecuzione
+-- Example of running the CFG evaluation
 main :: IO ()
 main = do
     let env = (initMemory, initRegisters)
