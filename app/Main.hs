@@ -269,6 +269,144 @@ exampleCFG = Set.fromList [
     (3, NonCF (Binary B64 Add (Reg 0) (R (Reg 1))), 4)
     ]
 
+-- Project Two 
+bitwiseShiftConstant :: Int 
+bitwiseShiftConstant = 0x0000FFFF  -- mask used for address masking
+
+dataLast :: Int 
+dataLast = 0x1234FFFF -- should be r1 + r2
+
+dataBegin :: Int
+dataBegin =  0x12340000 -- should be r1
+
+-- Process the program by applying transformations to each instruction
+processProgram :: Program -> Program
+processProgram program =
+  let numInstructions = length program
+  in concatMap (uncurry (processInstruction numInstructions)) (zip [0..] program)
+
+-- Function that decides which processing function to call, passing counter and numInstructions only for JCond and Jmp
+processInstruction :: Int -> Int -> Instruction -> Program
+processInstruction numInstructions counter (JCond cmp reg regimm offset) = processJCond counter numInstructions cmp reg regimm offset
+processInstruction numInstructions counter (Jmp offset) = processJmp counter numInstructions offset
+processInstruction _ _ (Binary size alu reg regimm) = processBinary size alu reg regimm
+processInstruction _ _ (Unary size unalu reg) = processUnary size unalu reg
+processInstruction _ _ (Store size reg memOffset regimm) = processStore size reg memOffset regimm
+processInstruction _ _ (Load size reg1 reg2 memOffset) = processLoad size reg1 reg2 memOffset
+processInstruction _ _ (LoadImm reg imm) = processLoadImm reg imm
+processInstruction _ _ (LoadMapFd reg imm) = processLoadMapFd reg imm
+processInstruction _ _ (LoadAbs size imm) = processLoadAbs size imm
+processInstruction _ _ (LoadInd size reg imm) = processLoadInd size reg imm
+processInstruction _ _ (Call extern) = processCall extern
+processInstruction _ _ Exit = processExit
+
+-- Functions that return the instruction passed as an argument
+processBinary :: BSize -> BinAlu -> Reg -> RegImm -> Program
+processBinary size alu reg regimm = [Binary size alu reg regimm]
+
+processUnary :: BSize -> UnAlu -> Reg -> Program
+processUnary size unalu reg = [Unary size unalu reg]
+
+processStore :: BSize -> Reg -> Maybe MemoryOffset -> RegImm -> Program
+processStore bin regDest memOffset regImm = 
+  let offsetValue = case memOffset of
+                      Just offset -> fromIntegral offset  -- Use offset if present
+                      Nothing     -> 0                    -- Use 0 if offset is Nothing
+  in
+  [ Binary B64 Add regDest (Imm offsetValue)  -- Add offset (or 0) to regDest
+  , Binary bin And regDest (Imm (fromIntegral bitwiseShiftConstant))   -- Mask the lower 16 bits
+  , Binary bin Or regDest (Imm (fromIntegral dataBegin))    -- Set the upper 16 bits
+  , Store bin regDest (if memOffset == Nothing then Nothing else Just (fromIntegral offsetValue)) regImm  -- Execute store with modified register
+  ]
+
+processLoad :: BSize -> Reg -> Reg -> Maybe MemoryOffset -> Program
+processLoad bin regDest regSrc memOffset =
+  let offsetValue = case memOffset of
+                      Just offset -> fromIntegral offset  -- Use offset if present
+                      Nothing     -> 0                    -- Use 0 if offset is Nothing
+  in
+  [ Binary B64 Add regSrc (Imm offsetValue)  -- Add offset (or 0) to regSrc
+  , Binary bin And regSrc (Imm (fromIntegral bitwiseShiftConstant))   -- Mask the lower 16 bits
+  , Binary bin Or regSrc (Imm (fromIntegral dataBegin))    -- Set the upper 16 bits
+  , Load bin regDest regSrc Nothing  -- Execute the original load
+  ]
+
+processLoadImm :: Reg -> Imm -> Program
+processLoadImm reg imm = [LoadImm reg imm]
+
+processLoadMapFd :: Reg -> Imm -> Program
+processLoadMapFd reg imm = [LoadMapFd reg imm]
+
+processLoadAbs :: BSize -> Imm -> Program
+processLoadAbs size imm = [LoadAbs size imm]
+
+processLoadInd :: BSize -> Reg -> Imm -> Program
+processLoadInd size reg imm = [LoadInd size reg imm]
+
+-- Processing for JCond
+processJCond :: Int -> Int -> Jcmp -> Reg -> RegImm -> CodeOffset -> Program
+processJCond counter numInstructions cmp reg regimm offset = 
+  let targetIndex = counter + fromIntegral offset  -- Calculate the target instruction index
+  in if targetIndex < 0 || targetIndex >= numInstructions
+     then error $ "Jump exceeds code bounds: " ++ show targetIndex ++ " is not valid."  -- Handle out-of-bound jumps
+     else [JCond cmp reg regimm offset]  -- Valid jump, return the JCond instruction
+
+-- Processing for Jmp
+processJmp :: Int -> Int -> CodeOffset -> Program
+processJmp counter numInstructions offset = 
+  let targetIndex = counter + fromIntegral offset  -- Calculate the target instruction index
+  in if targetIndex < 0 || targetIndex >= numInstructions
+     then error $ "Jump exceeds code bounds: " ++ show targetIndex ++ " is not valid."  -- Handle out-of-bound jumps
+     else [Jmp offset]  -- Valid jump, return the Jmp instruction
+
+processCall :: HelperId -> Program
+processCall extern = [Call extern]
+
+processExit :: Program
+processExit = [Exit]
+
+-- Process and adjust the program
+processAndAdjustProgram :: Program -> Program
+processAndAdjustProgram program =
+  let processedProgram = processProgram program
+  in adjustJumps processedProgram
+
+-- Adjust jumps after processing
+adjustJumps :: Program -> Program
+adjustJumps program = snd $ foldl adjustInstruction (0, []) program
+  where
+    adjustInstruction :: (Int, Program) -> Instruction -> (Int, Program)
+    adjustInstruction (counter, accProgram) (JCond cmp reg regimm offset) =
+      let adjustedOffset = adjustOffset program counter (fromIntegral offset) -- Convert offset to Int
+          adjustedInstr = JCond cmp reg regimm (fromIntegral adjustedOffset) -- Convert adjustedOffset back to CodeOffset
+      in (counter + 1, accProgram ++ [adjustedInstr])
+
+    adjustInstruction (counter, accProgram) (Jmp offset) =
+      let adjustedOffset = adjustOffset program counter (fromIntegral offset) -- Convert offset to Int
+          adjustedInstr = Jmp (fromIntegral adjustedOffset) -- Convert adjustedOffset back to CodeOffset
+      in (counter + 1, accProgram ++ [adjustedInstr])
+
+    adjustInstruction (counter, accProgram) instr =
+      (counter + 1, accProgram ++ [instr])
+
+-- Adjust the offset for jumps, taking into account the load/store instructions
+adjustOffset :: Program -> Int -> Int -> Int
+adjustOffset program counter originalOffset =
+  let targetIndex = counter + originalOffset
+      instructionsBetween = if originalOffset > 0
+                            then take (targetIndex - counter) (drop (counter + 3) program)
+                            else take (counter - targetIndex) (drop targetIndex program)
+      loadAndStoreCount = length $ filter isLoadOrStore instructionsBetween
+  in if originalOffset > 0
+     then originalOffset + 3 * loadAndStoreCount
+     else originalOffset - 3 * loadAndStoreCount
+
+-- Check if the instruction is a Load or Store
+isLoadOrStore :: Instruction -> Bool
+isLoadOrStore (Load _ _ _ _) = True
+isLoadOrStore (Store _ _ _ _) = True
+isLoadOrStore _ = False
+
 -- Example of running the CFG evaluation
 main :: IO ()
 main = do
